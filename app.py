@@ -41,6 +41,7 @@ def standardize_currency_columns(df):
         st.stop()
     return df, currency
 
+
 if file1 and file2 and file3:
     df1_raw = pd.read_csv(file1)
     df2_raw = pd.read_csv(file2)
