@@ -2,15 +2,29 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 
+# --- TITLE ---
 st.title("📈 Amazon Ads Optimizer")
 
-# Upload 3 CSVs
-st.subheader("Step 1: Upload your 3 campaign export files")
-file1 = st.file_uploader("📁 Upload file for Date 1", type="csv", key="date1")
-file2 = st.file_uploader("📁 Upload file for Date 2", type="csv", key="date2")
-file3 = st.file_uploader("📁 Upload file for Date 3", type="csv", key="date3")
+# 🅐 SESSION NAME
+session_name = st.text_input("📌 Session Name", value="Amazon Optimization Session")
 
-# Column validation (after renaming)
+# 🅑 PRODUCT INFO
+st.subheader("📝 Product Listing Info (optional)")
+product_title = st.text_area("Product Title", value="none")
+product_bullets = st.text_area("Bullet Points (paste all)", value="none")
+product_description = st.text_area("Product Description", value="none")
+
+# 🅒 NEW KEYWORDS
+new_keywords_raw = st.text_area("🧪 New Keyword Ideas (one per line)", value="")
+new_keywords = [kw.strip() for kw in new_keywords_raw.split("\n") if kw.strip()]
+
+# 🅓 CAMPAIGN FILE UPLOAD
+st.subheader("📁 Upload Your 3 Amazon Ads Campaign Exports")
+file1 = st.file_uploader("Date 1", type="csv", key="date1")
+file2 = st.file_uploader("Date 2", type="csv", key="date2")
+file3 = st.file_uploader("Date 3", type="csv", key="date3")
+
+# --- VALIDATION + NORMALIZATION ---
 expected_columns = ['Keyword', 'Match type', 'Impressions', 'Clicks', 'Spend',
                     'Sales', 'Orders', 'CTR', 'CPC', 'ACOS', 'ROAS']
 
@@ -28,28 +42,51 @@ def standardize_currency_columns(df):
             'Sales(EUR)': 'Sales',
             'CPC(EUR)': 'CPC'
         })
-        currency = 'EUR'
     elif 'Spend(USD)' in df.columns:
         df = df.rename(columns={
             'Spend(USD)': 'Spend',
             'Sales(USD)': 'Sales',
             'CPC(USD)': 'CPC'
         })
-        currency = 'USD'
     else:
         st.error("❌ Missing expected currency columns (Spend(EUR) or Spend(USD))")
         st.stop()
-    return df, currency
+    return df
 
+# --- PLACEHOLDER AI-LIKE ADVICE FUNCTION ---
+def generate_ai_advice(row):
+    if row['Sales_date3'] < 1 and row['Clicks_date3'] >= 10:
+        return "High clicks, no sales – likely a relevance issue."
+    if row['ROAS_date3'] > 2:
+        return "Great ROAS – consider scaling this keyword."
+    if row['CTR_date3'] < 0.002:
+        return "Low CTR – test rewriting product title or image."
+    if row['ACOS_date3'] > 0.6:
+        return "High ACOS – test lower bid or negative targeting."
+    return "Mixed performance – monitor and adjust if needed."
 
+def generate_listing_optimization(title, bullets, description):
+    return f"""
+### Optimized Title
+{title if title != 'none' else '[No title provided]'}
+
+### Optimized Bullet Points
+1. Emphasize benefits, not just features
+2. Use keywords naturally
+3. Include dimensions or compatibility
+4. Add a strong CTA like “Buy Now”
+5. Mention guarantees or differentiators
+
+### Optimized Description
+{description if description != 'none' else '[No description provided]'}\n\n
+Tip: Expand this into a compelling story with emotional and practical hooks.
+"""
+
+# --- MAIN LOGIC ---
 if file1 and file2 and file3:
-    df1_raw = pd.read_csv(file1)
-    df2_raw = pd.read_csv(file2)
-    df3_raw = pd.read_csv(file3)
-
-    df1, currency1 = standardize_currency_columns(df1_raw)
-    df2, currency2 = standardize_currency_columns(df2_raw)
-    df3, currency3 = standardize_currency_columns(df3_raw)
+    df1 = standardize_currency_columns(pd.read_csv(file1))
+    df2 = standardize_currency_columns(pd.read_csv(file2))
+    df3 = standardize_currency_columns(pd.read_csv(file3))
 
     if not (validate_file(df1, 'Date 1') and validate_file(df2, 'Date 2') and validate_file(df3, 'Date 3')):
         st.stop()
@@ -91,7 +128,6 @@ if file1 and file2 and file3:
     pivoted.columns = [f'{metric}_{period}' for metric, period in pivoted.columns]
     pivoted = pivoted.reset_index()
 
-    # Ensure required columns exist
     required_columns = [
         'CTR_date1', 'CTR_date2', 'CTR_date3',
         'ACOS_date1', 'ACOS_date2', 'ACOS_date3',
@@ -113,25 +149,21 @@ if file1 and file2 and file3:
     pivoted['CR_date3'] = pivoted['Orders_date3'] / pivoted['Clicks_date3'].replace(0, np.nan)
     pivoted['CPC_date3'] = pivoted['Spend_date3'] / pivoted['Clicks_date3'].replace(0, np.nan)
 
-    def classify_keyword(row):
-        if row['Sales_date3'] < 1 and row['Clicks_date3'] >= 10:
-            return 'CUT'
-        if row['ROAS_date3'] > 2.0 and row['ROAS_change_date3_vs_date2'] > 0 and row['ACOS_date3'] < 0.4:
-            return 'INCREASE'
-        if row['CTR_change_date3_vs_date2'] > 0 and row['ROAS_change_date3_vs_date2'] > 0:
-            return 'OPTIMIZE'
-        if row['Spend_date3'] > 10 and row['Orders_date3'] == 0:
-            return 'PAUSE'
-        if row['CTR_date3'] < 0.002 and row['Impressions_date3'] > 1000:
-            return 'REMOVE'
-        if row['CR_date3'] > 0.15 and row['CPC_date3'] < 0.3:
-            return 'BOOST'
-        return 'REVIEW'
+    pivoted['AI_Advice'] = pivoted.apply(generate_ai_advice, axis=1)
 
-    pivoted['Recommendation'] = pivoted.apply(classify_keyword, axis=1)
+    # --- DISPLAY RESULTS ---
+    st.subheader("📊 Recommendations Table")
+    selected = st.multiselect("Filter by Keyword", options=pivoted['Keyword'].unique(), default=pivoted['Keyword'].unique())
+    st.dataframe(pivoted[pivoted['Keyword'].isin(selected)])
 
-    st.subheader("✅ Recommendations Table")
-    selected = st.multiselect("Filter by Recommendation", options=pivoted['Recommendation'].unique().tolist(), default=list(pivoted['Recommendation'].unique()))
-    st.dataframe(pivoted[pivoted['Recommendation'].isin(selected)])
+    st.download_button("⬇️ Download Recommendations CSV", data=pivoted.to_csv(index=False), file_name=f"{session_name}_recommendations.csv")
 
-    st.download_button("⬇️ Download CSV", data=pivoted.to_csv(index=False), file_name="campaign_recommendations.csv")
+    # --- LISTING GENERATION (STATIC) ---
+    st.subheader("🪄 Suggested Listing Optimization")
+    st.markdown(generate_listing_optimization(product_title, product_bullets, product_description))
+
+    # --- NEW KEYWORDS ---
+    if new_keywords:
+        st.subheader("🧪 New Keyword Suggestions")
+        for kw in new_keywords:
+            st.markdown(f"**{kw}** — consider launching with exact match, low bid, and monitor ROAS")
